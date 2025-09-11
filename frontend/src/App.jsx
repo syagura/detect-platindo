@@ -1,15 +1,18 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Header from './components/section/Header'
+import Hero from './components/section/Hero'
+import PredictPage from './components/section/PredictPage';
 
 function App() {
-  const [count, setCount] = useState(0)
 
   return (
-    <>
-      <h1 className='text-2xl text-white'>Hello World</h1>
-    </>
+    <Router>
+      <Header/>
+      <Routes>
+        <Route path="/" element={<Hero/>} />
+        <Route path="/predict" element={<PredictPage/>} />
+      </Routes>
+    </Router>
   )
 }
 

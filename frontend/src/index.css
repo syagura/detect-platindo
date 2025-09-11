@@ -1,70 +1,99 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=ADLaM+Display&family=Abyssinica+SIL&family=Acme&family=Manrope:wght@200..800&family=Noto+Serif+Lao:wght@200;300;400&family=Poppins:ital,wght@0,400;0,900;1,600&display=swap');
 @import "tailwindcss";
 
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+/* ______________________________________________ *\
+ * STYLES
+\* ______________________________________________ */
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+    /* ______________________________________________ *\
+    * FONTS
+    \* ______________________________________________ */
+@font-face {
+  font-family: 'Ogg';
+  src: url('./assets/fonts/Ogg/OggTRIAL-Regular.woff2') format('woff2'),
+       url('./assets/fonts/Ogg/OggTRIAL-Regular.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
 }
 
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+@font-face {
+  font-family: 'CentSchbook Mono BT';
+  src: url('./assets/fonts/centschbook-mono-bt.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+@font-face {
+  font-family: 'Advercase Demo Regular';
+  src: url('./assets/fonts/advercase/AdvercaseDemo-Regular.woff2') format('woff2'),
+       url('./assets/fonts/advercase/AdvercaseDemo-Regular.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
+    /* ______________________________________________ *\
+    * COLORS
+    \* ______________________________________________ */
+@theme {
+  --color-dark: #1a1a1a;
+  --color-first-gradient: #B1D4E0;
+  --color-sec-gradient: #AFC1D0;
+  --color-gray_: #a0a0a0;
+  --color-green_: #10b981;
+  --color-olive-green: #50655B;
+  --color-shade1: #e7e0d3;
+  --color-shade2: #f9f6ee;
+  --color-shade3: #c0ae90;
+  --color-shade4: #392b2e;
+  --color-shade5: #3f6c56;
+  --color-shade6: #271c0b;
+  --color-shade7: #302428;
+  --color-zinc-light: #f5f5f5;
+  --color-footer: #A855F7;
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+  --color-instagram: #ec4899;
+  --color-youtube: #ef4444;
+  --color-kaggle: #60a5fa;
+  --color-blue5: #3b82f6;
+  --color-gray8: #1f2937;
+  --color-gray7: #374151;
+
+
+  /* color glossy */
+  --color-soft-cyan-blue-fresh: #B1D4E0;
+  --color-soft-cyan-blue-light: #A6C9D3;
+  --color-elegant-purple: #C084FC;
+  --color-elegant-purple_: #A855F7;
+  --color-deep-magenta: #F472B6;
+  --color-deep-magenta_: #DB2777;
+  --color-neon-blue: #7DD3FC;
+  --color-neon-blue_: #38BDF8;
+  --color-aurora-green: #6EE7B7;
+  --color-aurora-green_: #34D399;
+  --color-clasic-white-glow: #E5E7EB;
+  --color-clasic-white-glow_: #F3F4F6;
+  --color-rose-quartz: #F9A8D4;
+  --color-rose-quartz_: #EC4899;
+
+  --color-pre-gray-9: #111827;
+  --color-pre-blue-5: #3B82F6;
+  --color-pre-cyan-4: #22D3EE;
+  --color-blue-5-2: #3B82F633;
+
+  --color-light-100: #cecefb;
+  --color-light-200: #a8b5db;
+
+  --color-gray-100: #9ca4ab;
+
+  --color-dark-100: #0f0d23;
+
+  --font-ogg: Ogg, sans-serif;
+  --font-manrope: Manrope, sans-serif;
+  --font-mono: CentSchbook Mono BT, monospace;
+  --font-advert: Advercase Demo Regular, sans-serif;
+  --font-poppins: Poppins,  sans-serif;
+
 }
