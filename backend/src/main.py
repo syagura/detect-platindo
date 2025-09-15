@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from models.yolo_model import detect_plat
@@ -34,19 +34,44 @@ async def predict(file: UploadFile = File(...)):
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # deteksi plat 
-    croped = detect_plat(file_path)
+    try:
+        # deteksi plat 
+        detection_result = detect_plat(file_path)
 
-    # baca plat nomor 
-    plat_number = recognize_text(croped)
+        if detection_result is None:
+            return {
+                "plat_number": "No license plat detected",
+                "cropped_plat": None,
+                "confidence": 0,
+                "bounding_box": None
+            }
+        
+        cropped_image = detection_result["cropped_image"]
+        bounding_box = detection_result["bounding_box"]
+        confidence = detection_result["confidence"]
 
-    # encode image
-    image_bytes = encode_image_to_bytes(croped)
+        # baca plat nomor 
+        plat_number = recognize_text(cropped_image)
 
-    return {
-        "plat_number": plat_number,
-        "cropped_plat": image_bytes.hex()
-    }
+        # encode image
+        image_bytes = encode_image_to_bytes(cropped_image)
+
+        return {
+            "plat_number": plat_number,
+            "cropped_plat": image_bytes.hex(),
+            "confidence": confidence,
+            "bounding_box": bounding_box
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing image: {str(e)}"
+        )
+    finally:
+        # clean up upload file 
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
