@@ -16,4 +16,4 @@ dist/
 *.log
 
 # Uploaded images
-backend/uploads/
+backend/src/uploads/
