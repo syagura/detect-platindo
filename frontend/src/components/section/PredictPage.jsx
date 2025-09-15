@@ -1,11 +1,30 @@
 import React, { useState, useRef } from 'react'
 import { Upload, Camera, Video, Image, FileImage, Play, Square } from 'lucide-react'
+import api from '../../api'
+// Mock API function - replace this with your actual api.js import
+// const api = {
+//   post: async (url, formData) => {
+//     // Simulate API call for demo
+//     return new Promise((resolve, reject) => {
+//       setTimeout(() => {
+//         // Mock response
+//         resolve({
+//           data: {
+//             plat_number: "B 1234 ABC",
+//             cropped_plat: "89504e470d0a1a0a0000000d49484452" // Mock hex string
+//           }
+//         })
+//       }, 2000)
+//     })
+//   }
+// }
 
 const PredictPage = () => {
   const [activeTab, setActiveTab] = useState('image')
   const [uploadedFile, setUploadedFile] = useState(null)
   const [isDetecting, setIsDetecting] = useState(false)
   const [detectionResult, setDetectionResult] = useState(null)
+  const [error, setError] = useState(null)
   const fileInputRef = useRef(null)
   const videoRef = useRef(null)
 
@@ -20,21 +39,51 @@ const PredictPage = () => {
           name: file.name,
           type: file.type
         })
+        // Clear previous results and errors when new file is uploaded
+        setDetectionResult(null)
+        setError(null)
       }
       reader.readAsDataURL(file)
     }
   }
 
   const handleDetection = async () => {
+    if (!uploadedFile) {
+      setError('Please upload an image first')
+      return
+    }
+
     setIsDetecting(true)
-    // Simulasi proses deteksi
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    setDetectionResult({
-      plateNumber: "B 1234 ABC",
-      confidence: 95.2,
-      boundingBox: { x: 120, y: 80, width: 200, height: 60 }
-    })
-    setIsDetecting(false)
+    setError(null)
+
+    try {
+      // Create FormData to send file to backend
+      const formData = new FormData()
+      formData.append('file', uploadedFile.file)
+
+      // Send request to FastAPI backend
+      const response = await api.post('/predict', formData)
+      
+      const { plat_number, cropped_plat } = response.data
+
+      // Convert hex string back to image if needed
+      const croppedImageUrl = cropped_plat ? 
+        `data:image/jpeg;base64,${btoa(cropped_plat.match(/.{1,2}/g).map(hex => String.fromCharCode(parseInt(hex, 16))).join(''))}` 
+        : null
+
+      setDetectionResult({
+        plateNumber: plat_number || "Not detected",
+        confidence: 95.2, // You might want to return this from backend too
+        boundingBox: { x: 120, y: 80, width: 200, height: 60 }, // Mock data - get from backend if available
+        croppedImage: croppedImageUrl
+      })
+
+    } catch (err) {
+      console.error('Detection error:', err)
+      setError('Failed to detect license plate. Please try again.')
+    } finally {
+      setIsDetecting(false)
+    }
   }
 
   const startCamera = async () => {
@@ -45,6 +94,7 @@ const PredictPage = () => {
       }
     } catch (err) {
       console.error("Error accessing camera:", err)
+      setError("Could not access camera. Please check permissions.")
     }
   }
 
@@ -60,6 +110,13 @@ const PredictPage = () => {
     <div className="min-h-screen bg-gray-900 text-white p-6">
       <div className="max-w-6xl mx-auto">
         <h1 className="text-3xl font-bold mb-8 text-center">License Plate Detection</h1>
+        
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 bg-red-600 text-white p-4 rounded-xl text-center">
+            {error}
+          </div>
+        )}
         
         {/* Tab Navigation */}
         <div className="flex justify-center mb-8">
@@ -197,14 +254,17 @@ const PredictPage = () => {
                       <FileImage className="w-8 h-8 text-blue-400 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{uploadedFile.name}</p>
-                        <p className="text-gray-400 text-sm">Ready for detection</p>
+                        <p className="text-gray-400 text-sm">
+                          {detectionResult ? 'Detection completed' : 'Ready for detection'}
+                        </p>
                       </div>
                       <button
                         onClick={() => {
                           setUploadedFile(null)
                           setDetectionResult(null)
+                          setError(null)
                         }}
-                        className="text-gray-400 hover:text-white"
+                        className="text-gray-400 hover:text-white text-xl"
                       >
                         ×
                       </button>
@@ -237,7 +297,7 @@ const PredictPage = () => {
               
               <button
                 onClick={handleDetection}
-                disabled={!uploadedFile && activeTab !== 'realtime'}
+                disabled={!uploadedFile && activeTab !== 'realtime' || isDetecting}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
               >
                 {isDetecting ? (
@@ -276,6 +336,18 @@ const PredictPage = () => {
                     </div>
                     <p className="text-2xl font-bold text-green-400">{detectionResult.plateNumber}</p>
                   </div>
+                  
+                  {/* Show cropped image if available */}
+                  {detectionResult.croppedImage && (
+                    <div className="bg-gray-700 rounded-xl p-4">
+                      <h4 className="font-medium mb-2">Cropped License Plate</h4>
+                      <img 
+                        src={detectionResult.croppedImage} 
+                        alt="Cropped license plate" 
+                        className="w-full h-24 object-contain bg-white rounded"
+                      />
+                    </div>
+                  )}
                   
                   <div className="bg-gray-700 rounded-xl p-4">
                     <h4 className="font-medium mb-2">Detection Details</h4>
@@ -316,7 +388,7 @@ const PredictPage = () => {
               <h3 className="text-lg font-medium mb-4">Recent Detections</h3>
               <div className="space-y-3">
                 {[
-                  { plate: "B 1234 ABC", confidence: 95.2, time: "2 min ago" },
+                  { plate: detectionResult?.plateNumber || "B 1234 ABC", confidence: 95.2, time: "Just now" },
                   { plate: "D 5678 XYZ", confidence: 87.8, time: "5 min ago" },
                   { plate: "F 9012 DEF", confidence: 92.1, time: "8 min ago" }
                 ].map((item, index) => (
