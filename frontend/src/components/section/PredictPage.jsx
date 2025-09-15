@@ -1,23 +1,6 @@
 import React, { useState, useRef } from 'react'
 import { Upload, Camera, Video, Image, FileImage, Play, Square } from 'lucide-react'
 import api from '../../api'
-// Mock API function - replace this with your actual api.js import
-// const api = {
-//   post: async (url, formData) => {
-//     // Simulate API call for demo
-//     return new Promise((resolve, reject) => {
-//       setTimeout(() => {
-//         // Mock response
-//         resolve({
-//           data: {
-//             plat_number: "B 1234 ABC",
-//             cropped_plat: "89504e470d0a1a0a0000000d49484452" // Mock hex string
-//           }
-//         })
-//       }, 2000)
-//     })
-//   }
-// }
 
 const PredictPage = () => {
   const [activeTab, setActiveTab] = useState('image')
@@ -61,26 +44,45 @@ const PredictPage = () => {
       const formData = new FormData()
       formData.append('file', uploadedFile.file)
 
-      // Send request to FastAPI backend
-      const response = await api.post('/predict', formData)
-      
-      const { plat_number, cropped_plat } = response.data
+      console.log('Sending request to backend...') // Debug log
 
-      // Convert hex string back to image if needed
-      const croppedImageUrl = cropped_plat ? 
-        `data:image/jpeg;base64,${btoa(cropped_plat.match(/.{1,2}/g).map(hex => String.fromCharCode(parseInt(hex, 16))).join(''))}` 
-        : null
+      // Send request to FastAPI backend with explicit headers
+      const response = await api.post('/predict', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        }
+      })
+      
+      console.log('Backend response:', response.data) // Debug log
+      
+      const { plat_number, cropped_plat, confidence, bounding_box } = response.data
+
+      // Convert hex string to base64 for display
+      let croppedImageUrl = null
+      if (cropped_plat) {
+        try {
+          // Convert hex to binary string then to base64
+          const binaryString = cropped_plat.match(/.{1,2}/g)
+            .map(hex => String.fromCharCode(parseInt(hex, 16)))
+            .join('')
+          const base64String = btoa(binaryString)
+          croppedImageUrl = `data:image/jpeg;base64,${base64String}`
+        } catch (hexError) {
+          console.error('Error converting hex to image:', hexError)
+        }
+      }
 
       setDetectionResult({
         plateNumber: plat_number || "Not detected",
-        confidence: 95.2, // You might want to return this from backend too
-        boundingBox: { x: 120, y: 80, width: 200, height: 60 }, // Mock data - get from backend if available
+        confidence: confidence || 0,
+        boundingBox: bounding_box,
         croppedImage: croppedImageUrl
       })
 
     } catch (err) {
       console.error('Detection error:', err)
-      setError('Failed to detect license plate. Please try again.')
+      console.error('Error details:', err.response?.data) // More detailed error
+      setError(`Failed to detect license plate: ${err.response?.data?.detail || err.message}`)
     } finally {
       setIsDetecting(false)
     }
@@ -352,22 +354,31 @@ const PredictPage = () => {
                   <div className="bg-gray-700 rounded-xl p-4">
                     <h4 className="font-medium mb-2">Detection Details</h4>
                     <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-400">Position X:</span>
-                        <span className="ml-2">{detectionResult.boundingBox.x}px</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-400">Position Y:</span>
-                        <span className="ml-2">{detectionResult.boundingBox.y}px</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-400">Width:</span>
-                        <span className="ml-2">{detectionResult.boundingBox.width}px</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-400">Height:</span>
-                        <span className="ml-2">{detectionResult.boundingBox.height}px</span>
-                      </div>
+                      {detectionResult.boundingBox ? (
+                        <>
+                          <div>
+                            <span className="text-gray-400">Position X:</span>
+                            <span className="ml-2">{detectionResult.boundingBox.x1}px</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Position Y:</span>
+                            <span className="ml-2">{detectionResult.boundingBox.y1}px</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Width:</span>
+                            <span className="ml-2">{detectionResult.boundingBox.width}px</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Height:</span>
+                            <span className="ml-2">{detectionResult.boundingBox.height}px</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="col-span-2">
+                          <span className="text-gray-400">Status:</span>
+                          <span className="ml-2 text-green-400">Detection completed</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -388,7 +399,7 @@ const PredictPage = () => {
               <h3 className="text-lg font-medium mb-4">Recent Detections</h3>
               <div className="space-y-3">
                 {[
-                  { plate: detectionResult?.plateNumber || "B 1234 ABC", confidence: 95.2, time: "Just now" },
+                  { plate: detectionResult?.plateNumber || "B 1234 ABC", confidence: detectionResult?.confidence, time: "Just now" },
                   { plate: "D 5678 XYZ", confidence: 87.8, time: "5 min ago" },
                   { plate: "F 9012 DEF", confidence: 92.1, time: "8 min ago" }
                 ].map((item, index) => (
