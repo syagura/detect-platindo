@@ -8,6 +8,8 @@ const PredictPage = () => {
   const [isDetecting, setIsDetecting] = useState(false)
   const [detectionResult, setDetectionResult] = useState(null)
   const [error, setError] = useState(null)
+  const [processedVideoUrl, setProcessedVideoUrl] = useState(null)
+  const [videoProcessing, setVideoProcessing] = useState(false)
   const fileInputRef = useRef(null)
   const videoRef = useRef(null)
 
@@ -34,6 +36,10 @@ const PredictPage = () => {
     if (!uploadedFile) {
       setError('Please upload an image first')
       return
+    }
+
+    if (activeTab === 'video' && uploadedFile.type.startsWith('video/')) {
+      return handleVideoProcessing()
     }
 
     setIsDetecting(true)
@@ -85,6 +91,52 @@ const PredictPage = () => {
       setError(`Failed to detect license plate: ${err.response?.data?.detail || err.message}`)
     } finally {
       setIsDetecting(false)
+    }
+  }
+
+  const handleVideoProcessing = async () => {
+    setVideoProcessing(true)
+    setError(null)
+    setProcessedVideoUrl(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', uploadedFile.file)
+
+      console.log("Processing video... ")
+
+      const response = await api.post('/predict_video', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        }
+      })
+
+      const { video_id, detected_plates, download_url } = response.data
+
+      // Set the processed video URL
+      setProcessedVideoUrl(`http://localhost:8000${download_url}`)
+
+      // Set detection results from video
+      const plateNumbers = Object.values(detected_plates).map(p => p.text).filter(t => t)
+      const avgConfidence = Object.values(detected_plates).reduce((acc, p) => acc + p.confidence, 0) / Object.keys(detected_plates).length
+
+      setDetectionResults({
+        plateNumber: plateNumbers.join(', ') || "No plates detected",
+        confidence: avgConfidence || 0,
+        boundingBox: null,
+        croppedImage: null,
+        videoResult: true,
+        detectedFrames: Object.keys(detected_plates).length
+      })
+
+      console.log('Video processed successfully:', response.data)
+
+    } catch (err) {
+      console.error('Video processing error:', err)
+      setError(`Failed to precess video: ${err.response?.data?.detail || err.message}`)
+
+    } finally {
+      setVideoProcessing(false)
     }
   }
 
@@ -230,12 +282,12 @@ const PredictPage = () => {
                         />
                       ) : (
                         <video
-                          src={uploadedFile.preview}
+                          src={processedVideoUrl || uploadedFile.preview}
                           className="w-full h-80 object-cover"
                           controls
                         />
                       )}
-                      {detectionResult && (
+                      {detectionResult && detectionResult.boundingBox && (
                         <div
                           className="absolute border-2 border-red-500 bg-red-500 bg-opacity-20"
                           style={{
@@ -302,13 +354,13 @@ const PredictPage = () => {
                 disabled={!uploadedFile && activeTab !== 'realtime' || isDetecting}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
               >
-                {isDetecting ? (
+                {isDetecting || videoProcessing ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Detecting...
+                    {activeTab === 'video' ? 'Processing Video...' : 'Detecting...'}
                   </>
                 ) : (
-                  'Generate Detection'
+                  `Generate ${activeTab === 'video' ? 'Video Processing' : 'Detection'}`
                 )}
               </button>
             </div>
