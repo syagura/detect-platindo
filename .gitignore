@@ -17,3 +17,6 @@ dist/
 
 # Uploaded images
 backend/src/uploads/
+
+# Ouput video
+backend/src/outputs/
