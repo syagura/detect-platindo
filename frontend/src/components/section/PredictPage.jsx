@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Upload, Camera, Video, Image, FileImage, Play, Square } from 'lucide-react'
-import api from '../../api'
+import api, { cameraWS } from '../../api'
 
 const PredictPage = () => {
+
   const [activeTab, setActiveTab] = useState('image')
   const [uploadedFile, setUploadedFile] = useState(null)
   const [isDetecting, setIsDetecting] = useState(false)
@@ -10,8 +11,286 @@ const PredictPage = () => {
   const [error, setError] = useState(null)
   const [processedVideoUrl, setProcessedVideoUrl] = useState(null)
   const [videoProcessing, setVideoProcessing] = useState(false)
+  const [currentDetections, setCurrentDetections] = useState([])
+  const [isConnected, setIsConnected] = useState(false)
+  const [currentFrame, setCurrentFrame] = useState(null)
+  const [localStream, setLocalStream] = useState(null)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [isInitializing, setIsInitializing] = useState(false)
+
   const fileInputRef = useRef(null)
+  const localVideoRef = useRef(null)
   const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+  const reconnectTimerRef = useRef(null)
+  const frameIntervalRef = useRef(null)
+
+  const connectWebSocket = async () => {
+    try {
+      await cameraWS.connect();
+      setIsConnected(true);
+      console.log("WebSocket Connected");
+      
+      cameraWS.onMessage = (data) => {
+        console.log("Received data type:", data.type);
+
+        if (data.type === "frame") {
+          console.log("Frame received size:", data.image?.length);
+          setCurrentFrame(data.image);
+
+          if (data.detections && data.detections.length > 0) {
+            setCurrentDetections(data.detections);
+          }
+        } else if (data.type === 'error') {
+          setError(data.message);
+        }
+      };
+      
+      cameraWS.onError = (error) => {
+        console.error('WebSocket error:', error);
+        setError('WebSocket connection error');
+        setIsConnected(false);
+      };
+      
+      cameraWS.onClose = () => {
+        console.log('WebSocket closed');
+        setIsConnected(false);
+        setCurrentFrame(null);  // ✅ Uncomment ini
+        setCurrentDetections([]);
+        
+        // Auto reconnect
+        if (activeTab === 'realtime') {
+          reconnectTimerRef.current = setTimeout(() => {
+            console.log('Attempting to reconnect...');
+            connectWebSocket();
+          }, 2000);
+        }
+      };
+    } catch (error) {
+      console.error('Failed to connect:', error);
+      setError('Failed to connect to real-time detection service');
+      setIsInitializing(false);
+    }
+  };
+
+  const disconnectWebSocket = () => {
+    // Clear reconnect timer
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+
+    cameraWS.close();
+    setIsConnected(false);
+    setCurrentDetections([]);
+    setCurrentFrame(null);
+    };
+
+  const startLocalCamera = async () => {
+    try {
+      console.log("Rquesting camera access....");
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: 'environment'
+        }
+      });
+
+      console.log("Camera access granted");
+      setLocalStream(stream);
+      
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+
+        localVideoRef.current.onloadedmetadata = () => {
+          console.log("Video metadata loaded")
+          localVideoRef.current.play();
+        };
+      }
+      
+      console.log('Camera started successfully');
+      return true;
+
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      // setError("Could not access camera. Please check permissions.");
+      setError(`Could not access camera: ${err.message}`);
+      setIsInitializing(false);
+      return false;
+    }
+  };
+
+  const stopLocalCamera = () => {
+    console.log("Stopping camera...");
+
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      setLocalStream(null);
+    }
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+  };
+
+  const captureAndSendFrame = () => {
+    if (!localVideoRef.current || !isConnected || !isStreaming) {
+      console.log("Skip frame - condition not met", {
+        hasVideo: !!localVideoRef.current,
+        isConnected,
+        isStreaming
+      });
+      return;
+    };
+
+    const video = localVideoRef.current;
+
+    if (video.readyState != video.HAVE_ENOUGH_DATA) {
+      console.log("Video not ready yet");
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+
+    const frameData = canvas.toDataURL('image/jpeg', 0.7);
+
+    cameraWS.send({
+      type: 'frame',
+      image: frameData
+    });
+  };
+
+  const startDetection = () => {
+    console.log("Starting detection...");
+    setIsStreaming(true);
+    setIsDetecting(true);
+
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current);
+    }
+
+    frameIntervalRef.current = setInterval(() => {
+      captureAndSendFrame();
+    }, 200);
+  };
+
+  const stopDetection = () => {
+    console.log("Stopping detection...");
+    setIsStreaming(false);
+    setIsDetecting(false);
+
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current);
+      frameIntervalRef.current = null;
+    }
+  };
+
+  const startCameraDetection = () => {
+    if (isConnected) {
+      cameraWS.send({ command: 'start_camera' });
+    }
+  };
+
+  const stopCameraDetection = () => {
+    if (isConnected) {
+      cameraWS.send({ command: 'stop_camera' });
+    }
+  };
+
+  const intializeRealtime = async () => {
+    console.log("Initializing realtime detection...");
+    setIsInitializing(true);
+    setError(null);
+
+    try{
+      await connectWebSocket();
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const cameraStarted = await startLocalCamera();
+      if(!cameraStarted) {
+        throw new Error("Failed to start camera");
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      startDetection();
+
+      setIsInitializing(false);
+      console.log("Realtime detection initialized successfully");
+    } catch (error) {
+      console.log("Failed to initialize realtime:", error);
+      setError(`Failed to start realtime detection: ${error.message}`);
+      setIsInitializing(false);
+    }
+  };
+
+  const cleanupRealtime = () => {
+    console.log("Cleaning up realtime detection...");
+
+    stopDetection();
+    stopLocalCamera();
+    disconnectWebSocket();
+
+    setIsInitializing(false);
+    setError(null);
+  };
+
+  useEffect(() => {
+    let intervalId;
+
+    if (isStreaming && isConnected) {
+      intervalId = setInterval(() => {
+        captureAndSendFrame();
+      }, 200); // 5 FPS
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isStreaming, isConnected]);
+
+  useEffect(() => {
+    if (currentFrame && canvasRef.current) {
+      console.log("Rendering frame to canvas");
+      const img = document.createElement('img');
+
+      img.onload = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+      };
+
+      img.onerror = (e) => {
+        console.log('Error loading image:', e);
+      };
+
+      img.src = currentFrame;
+    }
+  }, [currentFrame]);
+
+  useEffect(() => {
+    if (activeTab === 'realtime') {
+      intializeRealtime();
+    } else {
+      cleanupRealtime();
+    }
+
+    return () => {
+      cleanupRealtime();
+    };
+  }, [activeTab]);
 
   const handleFileUpload = (event) => {
     const file = event.target.files[0]
@@ -38,10 +317,12 @@ const PredictPage = () => {
       return
     }
 
+    //Handle Video Processing
     if (activeTab === 'video' && uploadedFile.type.startsWith('video/')) {
       return handleVideoProcessing()
     }
 
+    //Handle image processing
     setIsDetecting(true)
     setError(null)
 
@@ -87,7 +368,7 @@ const PredictPage = () => {
 
     } catch (err) {
       console.error('Detection error:', err)
-      console.error('Error details:', err.response?.data) // More detailed error
+      console.error('Error details:', err.response?.data)
       setError(`Failed to detect license plate: ${err.response?.data?.detail || err.message}`)
     } finally {
       setIsDetecting(false)
@@ -114,13 +395,13 @@ const PredictPage = () => {
       const { video_id, detected_plates, download_url } = response.data
 
       // Set the processed video URL
-      setProcessedVideoUrl(`http://localhost:8000${download_url}`)
+      setProcessedVideoUrl(`http://localhost:8000/stream_video${video_id}`)
 
       // Set detection results from video
       const plateNumbers = Object.values(detected_plates).map(p => p.text).filter(t => t)
       const avgConfidence = Object.values(detected_plates).reduce((acc, p) => acc + p.confidence, 0) / Object.keys(detected_plates).length
 
-      setDetectionResults({
+      setDetectionResult({
         plateNumber: plateNumbers.join(', ') || "No plates detected",
         confidence: avgConfidence || 0,
         boundingBox: null,
@@ -161,7 +442,7 @@ const PredictPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-6">
+     <div className="min-h-screen bg-dark text-white p-6">
       <div className="max-w-6xl mx-auto">
         <h1 className="text-3xl font-bold mb-8 text-center">License Plate Detection</h1>
         
@@ -212,41 +493,62 @@ const PredictPage = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Upload/Camera Section */}
+          {/* Camera Section */}
           <div className="space-y-6">
             {activeTab === 'realtime' ? (
               <div className="bg-gray-800 rounded-2xl p-6">
-                <h3 className="text-xl font-semibold mb-4">Camera Feed</h3>
+                <h3 className="text-xl font-semibold mb-4">Real-time Camera Detection</h3>
+
+                <video 
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{ display: 'none' }}
+                />
+
                 <div className="relative">
-                  <video
-                    ref={videoRef}
-                    className="w-full h-80 bg-gray-700 rounded-xl object-cover"
-                    autoPlay
-                    muted
+                  <canvas
+                    ref={canvasRef}
+                    width={640}
+                    height={480}
+                    className="w-full max-w-2xl border rounded bg-gray-900"
                   />
-                  {!videoRef.current?.srcObject && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-700 rounded-xl">
+                  {(!currentFrame || isInitializing) && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-700/90 rounded-xl">
                       <Camera className="w-16 h-16 text-gray-500 mb-4" />
-                      <p className="text-gray-400 text-center">Click start to begin camera detection</p>
+                      <p className="text-gray-300 text-center mb-2">
+                        {isInitializing ? 'Initializing camera...' : 
+                        !isConnected ? 'Connecting to server...' : 
+                        !localStream ? 'Starting camera...' :
+                        !isStreaming ? 'Starting detection...' :
+                        'Waiting for frames...'}
+                      </p>
+                      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                     </div>
                   )}
                 </div>
-                <div className="flex gap-4 mt-4">
-                  <button
-                    onClick={startCamera}
-                    className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Play size={18} />
-                    Start Camera
-                  </button>
-                  <button
-                    onClick={stopCamera}
-                    className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Square size={18} />
-                    Stop Camera
-                  </button>
+                <div className="mt-4 flex flex-wrap gap-3 text-sm">
+                  {isConnected && (
+                    <span className="flex items-center gap-2 bg-green-600/20 text-green-400 px-3 py-1 rounded-full">
+                      <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                      Server Connected
+                    </span>
+                  )}
+                  {localStream && (
+                    <span className="flex items-center gap-2 bg-blue-600/20 text-blue-400 px-3 py-1 rounded-full">
+                      <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
+                      Camera Active
+                    </span>
+                  )}
+                  {isDetecting && (
+                    <span className="flex items-center gap-2 bg-yellow-600/20 text-yellow-400 px-3 py-1 rounded-full">
+                      <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></span>
+                      Detecting...
+                    </span>
+                  )}
                 </div>
+                
               </div>
             ) : (
               <div className="bg-gray-800 rounded-2xl p-6">
@@ -370,7 +672,6 @@ const PredictPage = () => {
           <div className="space-y-6">
             <div className="bg-gray-800 rounded-2xl p-6">
               <h3 className="text-xl font-semibold mb-4">Detection Results</h3>
-              
               {!detectionResult ? (
                 <div className="text-center py-12">
                   <div className="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -381,6 +682,66 @@ const PredictPage = () => {
                     Upload an {activeTab} and click detect to see results
                   </p>
                 </div>
+              ) : detectionResult.videoResult ?  (
+                // Video Results - hanya tampilkan video processed
+                <div className="space-y-4">
+                  <div className="bg-gray-700 rounded-xl p-4">
+                    <h4 className="font-medium mb-2">Processed Video with Tracking</h4>
+                    <video 
+                      src={processedVideoUrl}
+                      className="w-full h-64 object-contain bg-black rounded"
+                      controls
+                      preload='metadata'
+                      onError={(e) => console.error('Video error:', e)}
+                      onLoadStart={() => console.log('Video loading started')}
+                      onCanPlay={() => console.log('Video can play')}
+                    >
+                      <source src={processedVideoUrl} type='video/mp4' />
+                      Your browser does not support the video tag.
+                    </video>
+                    {!processedVideoUrl && (
+                      <div className="w-full h-64 bg-gray-600 rounded flex items-center justify-center">
+                        <p className="text-gray-400">Video not available</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-gray-700 rounded-xl p-4">
+                    <h4 className="font-medium mb-2">Processing Summary</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-400">Status:</span>
+                        <span className="ml-2 text-green-400">Processing completed</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Detected Frames:</span>
+                        <span className="ml-2">{detectionResult.detectedFrames || 0}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Average Confidence:</span>
+                        <span className="ml-2">{detectionResult.confidence.toFixed(1)}%</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Processing Type:</span>
+                        <span className="ml-2">Video Tracking</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <a 
+                      href={processedVideoUrl}
+                      download={`tracked_video_${Date.now()}.mp4`}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors text-center flex items-center justify-center"
+                    >
+                      Download Processed Video
+                    </a>
+                    <button className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                      Save Result
+                    </button>
+                  </div>
+                </div>
+
               ) : (
                 <div className="space-y-4">
                   <div className="bg-gray-700 rounded-xl p-4">
