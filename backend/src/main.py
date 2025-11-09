@@ -1,12 +1,13 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-import httpx
-import asyncio
+# import httpx
+# import asyncio
 import uvicorn
 from models.yolo_model import detect_plat, detect_plat_from_frame
 from services.recognize import recognize_text
 from services.preprocess import encode_image_to_bytes, process_video_with_tracking
+from models.yolo_model import model
 import shutil
 import uuid
 import base64
@@ -14,7 +15,7 @@ import numpy as np
 from typing import List
 import json
 import os
-import io
+from pathlib import Path
 import time
 import cv2 as cv
 
@@ -65,6 +66,15 @@ manager = ConnectionManager()
 camera = None
 detection_active = False
 
+@app.get("/health")
+async def health_check():
+    """Check if model are loaded"""
+    return {
+        "status": "healthy",
+        "yolo_model": "loaded" if model else "not loaded",
+        "timestamp": time.time()
+    }
+
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     # simpan file 
@@ -95,6 +105,7 @@ async def predict(file: UploadFile = File(...)):
         # ocr_plate_type = 'black' if 'hitam' in plate_type.lower() else 'white'
 
         # baca plat nomor 
+        # plat_number = "TESTEMODE"
         plat_number = recognize_text(cropped_image)
 
         # encode image
@@ -151,6 +162,33 @@ async def predict_video(file: UploadFile = File(...)):
         if os.path.exists(input_path):
             os.remove(input_path)
 
+@app.get("/stream_video/{video_id}")
+async def stream_video(video_id: str):
+    """Stream processed video (playable in browser)"""
+    output_filename = f"{video_id}_output.mp4"
+    output_path = os.path.join(OUTPUT_DIR, output_filename)
+
+    if not os.path.exists(output_path):
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    return FileResponse(
+        path=output_path,
+        media_type='video/mp4',
+        headers={
+            "Accept-Ranges": "bytes",
+            # "Content-Disposition": "inline"
+        }
+    )
+    # def iterfile():
+    #     with open(output_path, mode="rb") as file:
+    #         yield from file
+
+    # return StreamingResponse(
+    #     iterfile(),
+    #     media_type="video/mp4",
+    #     headers={"Accept-Ranges": "bytes"}
+    # )
+
     
 @app.get("/download_video/{video_id}")
 async def download_video(video_id: str):
@@ -170,13 +208,24 @@ async def download_video(video_id: str):
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     print("Client connected for realtime detection")
+    frame_count = 0
 
     try:
         while True:
             data = await websocket.receive_text()
             message = json.loads(data)
 
+
             if message.get("type") == "frame":
+                frame_count += 1
+                if frame_count % 2 != 0:
+                    await websocket.send_text(json.dumps({
+                        "type": "frame",
+                        "image": message.get("image"),
+                        "detections": [],
+                        "timestamp": time.time()
+                    }))
+                    continue
                 frame_data = message.get("image", "")
 
                 if "base64," in frame_data:

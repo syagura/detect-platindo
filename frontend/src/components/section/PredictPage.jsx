@@ -160,6 +160,7 @@ const PredictPage = () => {
 
     const frameData = canvas.toDataURL('image/jpeg', 0.7);
 
+    console.log("Sending frame...")
     cameraWS.send({
       type: 'frame',
       image: frameData
@@ -233,7 +234,15 @@ const PredictPage = () => {
   const cleanupRealtime = () => {
     console.log("Cleaning up realtime detection...");
 
-    stopDetection();
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current);
+      frameIntervalRef.current = null;
+    }
+
+    setIsStreaming(false);
+    setIsDetecting(false);
+
+    // stopDetection();
     stopLocalCamera();
     disconnectWebSocket();
 
@@ -242,12 +251,25 @@ const PredictPage = () => {
   };
 
   useEffect(() => {
+    const checkBackendHealth = async () => {
+      try {
+        const response = await api.get("/health");
+        console.log('Backend Ready:', response.data);
+      } catch (error) {
+        consol.error('Backend Not Ready:', error);
+      }
+    };
+
+    checkBackendHealth();
+  }, []);
+
+  useEffect(() => {
     let intervalId;
 
     if (isStreaming && isConnected) {
       intervalId = setInterval(() => {
         captureAndSendFrame();
-      }, 200); // 5 FPS
+      }, 500); // 5 FPS
     }
 
     return () => {
@@ -326,6 +348,21 @@ const PredictPage = () => {
     setIsDetecting(true)
     setError(null)
 
+    const progressMessages = [
+      "Uploading image...",
+      "Detecting License Plate...",
+      "Reading Plate Number...",
+      "Processing Result..."
+    ];
+
+    let messageIndex = 0;
+    const progressInterval = setInterval(() => {
+      if (messageIndex < progressMessages.length) {
+        setError(progressMessages[messageIndex]);
+        messageIndex++;
+      }
+    }, 200)
+
     try {
       // Create FormData to send file to backend
       const formData = new FormData()
@@ -337,7 +374,8 @@ const PredictPage = () => {
       const response = await api.post('/predict', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
-        }
+        },
+        timeout: 0
       })
       
       console.log('Backend response:', response.data) // Debug log
@@ -366,6 +404,9 @@ const PredictPage = () => {
         croppedImage: croppedImageUrl
       })
 
+      clearInterval(progressInterval);
+      setError(null)
+
     } catch (err) {
       console.error('Detection error:', err)
       console.error('Error details:', err.response?.data)
@@ -389,13 +430,14 @@ const PredictPage = () => {
       const response = await api.post('/predict_video', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
-        }
+        },
+        timeout: 0
       })
 
       const { video_id, detected_plates, download_url } = response.data
 
       // Set the processed video URL
-      setProcessedVideoUrl(`http://localhost:8000/stream_video${video_id}`)
+      setProcessedVideoUrl(`http://localhost:8000/stream_video/${video_id}`)
 
       // Set detection results from video
       const plateNumbers = Object.values(detected_plates).map(p => p.text).filter(t => t)
@@ -407,7 +449,8 @@ const PredictPage = () => {
         boundingBox: null,
         croppedImage: null,
         videoResult: true,
-        detectedFrames: Object.keys(detected_plates).length
+        detectedFrames: Object.keys(detected_plates).length,
+        videoId: video_id
       })
 
       console.log('Video processed successfully:', response.data)
@@ -421,25 +464,25 @@ const PredictPage = () => {
     }
   }
 
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-      }
-    } catch (err) {
-      console.error("Error accessing camera:", err)
-      setError("Could not access camera. Please check permissions.")
-    }
-  }
+  // const startCamera = async () => {
+  //   try {
+  //     const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+  //     if (videoRef.current) {
+  //       videoRef.current.srcObject = stream
+  //     }
+  //   } catch (err) {
+  //     console.error("Error accessing camera:", err)
+  //     setError("Could not access camera. Please check permissions.")
+  //   }
+  // }
 
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const tracks = videoRef.current.srcObject.getTracks()
-      tracks.forEach(track => track.stop())
-      videoRef.current.srcObject = null
-    }
-  }
+  // const stopCamera = () => {
+  //   if (videoRef.current && videoRef.current.srcObject) {
+  //     const tracks = videoRef.current.srcObject.getTracks()
+  //     tracks.forEach(track => track.stop())
+  //     videoRef.current.srcObject = null
+  //   }
+  // }
 
   return (
      <div className="min-h-screen bg-dark text-white p-6">
@@ -584,9 +627,10 @@ const PredictPage = () => {
                         />
                       ) : (
                         <video
-                          src={processedVideoUrl || uploadedFile.preview}
+                          src={uploadedFile.preview}
                           className="w-full h-80 object-cover"
                           controls
+                          key="original-video"
                         />
                       )}
                       {detectionResult && detectionResult.boundingBox && (
@@ -618,6 +662,7 @@ const PredictPage = () => {
                         onClick={() => {
                           setUploadedFile(null)
                           setDetectionResult(null)
+                          setProcessedVideoUrl(null)
                           setError(null)
                         }}
                         className="text-gray-400 hover:text-white text-xl"
@@ -686,8 +731,47 @@ const PredictPage = () => {
                 // Video Results - hanya tampilkan video processed
                 <div className="space-y-4">
                   <div className="bg-gray-700 rounded-xl p-4">
-                    <h4 className="font-medium mb-2">Processed Video with Tracking</h4>
-                    <video 
+                    <div className='flex items-center justify-between mb-2'>
+                      <h4 className="font-medium mb-2">Processed Video with Tracking</h4>
+                      {processedVideoUrl && (
+                        <span className="text-xs text-green-400">● Ready</span>
+                      )}
+                    </div>
+                    {processedVideoUrl ? (
+                      <video 
+                        src={processedVideoUrl}
+                        className="w-full h-64 object-contain bg-black rounded"
+                        controls
+                        preload='metadata'
+                        key="processed-video"
+                        onError={(e) => {
+                          console.error('Video error:', e.target.error)
+
+                          const errorCode = e.target.error?.code
+                          const errorMessages = {
+                            1: 'MEDIA_ERR_ABORTED',
+                            2: 'MEDIA_ERR_NETWORK',
+                            3: 'MEDIA_ERR_DECODE',
+                            4: 'MEDIA_ERR_SRC_NOT_SUPPORTED'
+                          }
+                          console.error('Error code:', errorCode, errorMessages[errorCode])
+                          setError(`Video playback failed: ${errorMessages[errorCode] || 'Unknown error'}`)
+                        }}
+                        onLoadStart={() => console.log('Video loading...')}
+                        onLoadedMetadata={() => console.log('Video metadata loaded')}
+                        onCanPlay={() => console.log('Video ready to play')}
+                      >
+                        <source src={processedVideoUrl} type='video/mp4' />
+                        Your browser does not support the video tag
+                      </video>
+                    ) : (
+                      <div className="w-full h-64 bg-gray-600 rounded flex flex-col items-center justify-center">
+                        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                        <p className='text-gray-400'>Processing Video...</p>
+                      </div>
+                    )}
+                  </div>
+                    {/* <video 
                       src={processedVideoUrl}
                       className="w-full h-64 object-contain bg-black rounded"
                       controls
@@ -703,8 +787,7 @@ const PredictPage = () => {
                       <div className="w-full h-64 bg-gray-600 rounded flex items-center justify-center">
                         <p className="text-gray-400">Video not available</p>
                       </div>
-                    )}
-                  </div>
+                    )} */}
 
                   <div className="bg-gray-700 rounded-xl p-4">
                     <h4 className="font-medium mb-2">Processing Summary</h4>
@@ -730,7 +813,7 @@ const PredictPage = () => {
 
                   <div className="flex gap-3">
                     <a 
-                      href={processedVideoUrl}
+                      href={`http://localhost:8000/download_video/${detectionResult.videoId}`}
                       download={`tracked_video_${Date.now()}.mp4`}
                       className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors text-center flex items-center justify-center"
                     >

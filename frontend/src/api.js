@@ -5,7 +5,7 @@ const WS_BASE_URL = "ws://localhost:8000";
 
 const api = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 10000,
+    timeout: 120000,
     headers: {
         'content-Type': 'application/json',
     }
