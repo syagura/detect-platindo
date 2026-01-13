@@ -1,8 +1,10 @@
 import cv2 as cv
 import subprocess
+import numpy as np
 import os
-from models.yolo_model import detect_plat_from_frame
-from services.recognize import recognize_text
+import traceback 
+from models.yolo_model import detect_plat_from_frame, PlateTracker
+from backend.src.services.recognize import recognize_text
 
 def encode_image_to_bytes(img):
     img = cv.resize(img, (img.shape[1], img.shape[0]), fx=0.2, fy=0.2)
@@ -17,7 +19,7 @@ def process_video_with_tracking(video_path: str, output_path: str):
     if not cap.isOpened():
         raise ValueError("Cannot open video file")
 
-    # Get video propreties
+    # Get video properties
     fps = int(cap.get(cv.CAP_PROP_FPS))
     width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
@@ -32,12 +34,18 @@ def process_video_with_tracking(video_path: str, output_path: str):
     if not out.isOpened():
         raise ValueError("Cannot create temp video")
     
+    # ==== Initialize Tracker ====
+    tracker = PlateTracker(max_disappeared=15, iou_threshold=0.3)
 
     frame_count = 0
     detected_plates = {}
-    last_ocr_text = {}
+    # last_ocr_text = {}
 
-    print("Starting video processing...")
+    # Settings
+    DETECT_EVERY_N_FRAMES = 3
+    OCR_EVERY_N_FRAMES = 30
+
+    print("Starting video processing")
 
     try:
         while True:
@@ -47,74 +55,110 @@ def process_video_with_tracking(video_path: str, output_path: str):
 
             frame_count += 1
 
-            if frame_count % 10 == 0:
-                detections = detect_plat_from_frame(frame)
+            if frame_count % DETECT_EVERY_N_FRAMES == 0:
+                try:
+                    raw_detections = detect_plat_from_frame(frame)
 
-                if detections:
-                    for detection in detections:
-                        bbox = detection.get("bounding_box", {})
-                        confidence = detection.get("confidence", 0)
-                        cropped = detection.get("cropped_image")
+                    tracked_detections = tracker.update(raw_detections)
+                
+                except Exception as e:
+                    print(f"Detection error at frame {frame_count}: {e}")
+                    tracked_detections = tracker.update([])
+            else:
+                tracked_detections = tracker.update([])
+            for detection in tracked_detections:
+                try:
+                    polygon = detection.get("polygon")
+                    confidence = float(detection.get("confidence", 0))
+                    track_id = detection.get("track_id", -1)
+                    cropped = detection.get("cropped_image")
 
-                        if bbox:
-                            cv.rectangle(
-                                frame, 
-                                (bbox["x1"], bbox["y1"]),
-                                (bbox["x2"], bbox["y2"]),
-                                (0, 255, 0), 3
-                            )
+                    if polygon:
+                        pts = np.array(polygon, dtype=np.int32).reshape(-1, 2)
 
+                        # Draw OBB polygons
+                        cv.polylines(frame, [pts], True, (0, 255, 0), 3)
+
+                        if cropped is not None and frame_count % OCR_EVERY_N_FRAMES == 0:
+                            try:
+                                plate_type = detection.get("plate_type", "plat_putih")
+                                plate_text = recognize_text(cropped, plate_type)
+                                plate_text = str(plate_text) if plate_text else ""
+
+                                if track_id in tracker.tracks:
+                                    tracker.tracks[track_id]['ocr_text'] = plate_text
+
+                                print(f"Frame {frame_count}, Track {track_id}: OCR = {plate_text} ({confidence:.1f}%)")
+
+                            except Exception as e:
+                                print(f"OCR error: {e}")
+                                
+                        # Get OCR text (use chached from tracker)
+                        if track_id in tracker.tracks:
+                            plate_text = tracker.tracks[track_id].get('ocr_text', "")
+                        else:
                             plate_text = ""
-                            track_id = f"{bbox['x1']}_{bbox['y1']}"
 
-                            if cropped is not None and frame_count % 50 == 0:
-                                try:
-                                    plate_text = recognize_text(cropped)
-                                    last_ocr_text[track_id] = plate_text
-                                    print(f"Frame {frame_count}: OCR = {plate_text} ({confidence:.1f}%)")
-                                except Exception as e:
-                                    print(f"OCR error: {e}")
-                                    plate_text = last_ocr_text.get(track_id, "")
-                            else:
-                                plate_text = last_ocr_text.get(track_id, "")
+                        # Draw label
+                        if plate_text:
+                            label = f"ID{track_id}: {plate_text} ({confidence:.1f}%)"
+                        else:
+                            label = f"ID{track_id}: Detecting... ({confidence:.1f}%)"
 
-                            # Draw label dengan plate text
-                            if plate_text:
-                                label = f"{plate_text} ({confidence:.1f}%)"
-                            else:
-                                label = f"Plate ({confidence:.1f}%)"
-
-                            # Background untuk text 
+                        try:
                             (text_width, text_height), _ = cv.getTextSize(
-                                label, cv.FONT_HERSHEY_SIMPLEX, 0.7, 2
+                                label, cv.FONT_HERSHEY_SIMPLEX, 0.6, 2
                             )
 
+                            label_x = int(polygon[0])
+                            label_y = int(polygon[1])
+
+                            # Background
                             cv.rectangle(
                                 frame,
-                                (bbox["x1"], bbox["y1"] - text_height - 10),
-                                (bbox["x1"] + text_width, bbox["y1"]),
+                                (label_x, label_y - text_height - 10),
+                                (label_x + text_width, label_y),
                                 (0, 255, 0), -1
                             )
 
+                            # Text 
                             cv.putText(
                                 frame, label,
-                                (bbox["x1"], bbox["y1"] - 5),
-                                cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2
+                                (label_x, label_y - 5),
+                                cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2
                             )
+                        except Exception as e:
+                            print(f"Draw label error: {e}")
+                            traceback.print_exc()
+                            continue
+                        
+                        # store detection
+                        detected_plates[frame_count] = {
+                            'track_id': track_id,
+                            'text': str(plate_text),
+                            'confidence': float(confidence),
+                            'polygon': polygon
+                        }
 
-                            detected_plates[frame_count] = {
-                                "text": plate_text,
-                                "confidence": confidence,
-                                "bbox": bbox
-                            }
+                except Exception as e:
+                    print(f"Detection processing error: {e}")
+                    continue
+            
+            # Write frame 
             out.write(frame)
 
+            # Progress
             if frame_count % 100 == 0:
                 progress = (frame_count / total_frames) * 100
-                print(f"Progress: {progress:.1f}% ({frame_count}/{total_frames} frames)")
-    
+                print(f"Progress: {progress:.1f}% ({frame_count} / {total_frames}) Active tracks: {len(tracker.tracks)}")
+
+
+
+    except Exception as e:
+        print(f"Video processing error: {e}")
+        traceback.print_exc()
+        raise
     finally:
-        
         cap.release()
         out.release()
     
@@ -153,7 +197,7 @@ def process_video_with_tracking(video_path: str, output_path: str):
     except FileNotFoundError:
         print("FFmpeg not found. Install: choco install ffmpeg")
         os.rename(temp_output, output_path)
-        print("Using mp4v coded (may not play in browser)")
+        print("Using mp4v codec (may not play in browser)")
 
     except Exception as e:
         print(f"Re-encoding failed: {e}")
