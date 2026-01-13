@@ -57,9 +57,63 @@
   --color-instagram: #ec4899;
   --color-youtube: #ef4444;
   --color-kaggle: #60a5fa;
+  --color-blue4: #60a5fa;
   --color-blue5: #3b82f6;
-  --color-gray8: #1f2937;
+  --color-blue6: #2563eb;
+  --color-blue7: #1d4ed8;
+  --color-gray3: #d1d5db;
+  --color-gray4: #9ca3af;
+  --color-gray5: #6b7280;
+  --color-gray6: #4b5563;
   --color-gray7: #374151;
+  --color-gray8: #1f2937;
+  --color-gray9: #111827;
+  --color-red5: #ef4444;
+  --color-red6: #dc2626;
+  --color-green4: #4ade80;
+  --color-green5: #22c55e;
+  --color-green6: #16a34a;
+  --color-green7: #15803d;
+  --color-yellow4: #facc15;
+  --color-yellow5: #eab308;
+  --color-pink4: #f472b6;
+  --color-pink6: #db2777;
+  --color-pink7: #be185d;
+  --color-purple3: #d8b4fe;
+  --color-purple4: #c084fc;
+  --color-purple6: #9333ea;
+  --color-purple7: #7e22ce;
+  --color-stone3: #d6d3d1;
+
+
+  /* Colors with Opacity */
+  --color-gray79: #374151;
+  --color-gray98: #111827cc;
+  --color-gray62: #4b5563;
+  --color-gray58: #6b7280cc;
+  --color-gray64: #4b556366;
+  --color-gray85: #1f293780;
+  --color-gray75: #37415180;
+  --color-yellow62: #ca8a04;
+  --color-yellow51: #eab3081a;
+  --color-green62: #16a34a33;
+  --color-blue62: #2563eb33;
+  --color-blue51: #3b82f61a;
+  --color-purple53: #a855f74d;
+  --color-purple42: #c084fc33;
+  --color-purple31: #d8b4fe1a;
+  --color-purple36: #d8b4fe99;
+  --color-purple56: #a855f799;
+  --color-purple44: #c084fc66;
+  --color-purple33: #d8b4fe4d;
+  --color-purple51: #a855f71a;
+  --color-pink51: #ec48991a;
+  --color-pink56: #ec489999;
+  --color-pink44: #f472b666;
+  --color-pink33: #f9a8d44d;
+  --color-zinc53: #fafafa4d;
+
+
 
 
   /* color glossy */
@@ -96,4 +150,58 @@
   --font-advert: Advercase Demo Regular, sans-serif;
   --font-poppins: Poppins,  sans-serif;
 
+}
+
+    /* ______________________________________________ *\
+    * utilities
+    \* ______________________________________________ */
+
+
+/* ______________________________________________ *\
+* Cars Animations
+\* ______________________________________________ */
+@keyframes car-lr-slow {
+  0% { transform: translateX(-150px); }
+  100% { transform: translateX(calc(100vw + 50px)); }
+}
+
+@keyframes car-lr-fast {
+  0% { transform: translateX(-120px); }
+  100% { transform: translateX(calc(100vw + 30px)); }
+}
+
+@keyframes car-rl-medium {
+  0% { transform: translateX(calc(100vw + 120px)); }
+  100% { transform: translateX(-150px); }
+}
+
+@keyframes road-line {
+  0% { transform: translateX(0); opacity: 0.3; }
+  50% { opacity: 0.8; }
+  100% { transform: translateX(-100px); opacity: 0.3; }
+}
+
+@keyframes scan-slow {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(300px); }
+}
+
+.animate-car-lr-slow {
+  animation: car-lr-slow 15s linear infinite;
+}
+
+.animate-car-lr-fast {
+  animation: car-lr-fast 10s linear infinite;
+}
+
+.animate-car-rl-medium {
+  animation: car-rl-medium 12s linear infinite;
+}
+
+.animate-road-line {
+  animation: road-line 2s linear infinite;
+}
+
+.animate-scan-slow {
+  animation: scan-slow 4s ease-in-out infinite;
 }
