@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Code, Zap, Shield, Users, Award, Cpu } from 'lucide-react';
-import syahrul from '../../../assets/images/me.jpg';
+import syahrul from '../../../assets/images/me.JPG';
 
 /**
  * About Section Component
