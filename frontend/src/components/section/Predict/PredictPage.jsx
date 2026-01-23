@@ -86,7 +86,7 @@ const PredictPage = () => {
             const { video_id, detected_plates } = response.data;
             setDetectedPlatesData(detected_plates);
             const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-            setProcessedVideoUrl(`${apiBaseUrl}/api/stream_video/${video_id}`);
+            setProcessedVideoUrl(`${apiBaseUrl}api/stream_video/${video_id}`);
 
             // Calculate stats
             const plateNumbers = Object.values(detected_plates).map(p => p.text).filter(t => t);
